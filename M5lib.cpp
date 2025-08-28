@@ -85,18 +85,18 @@ void M5lib::setupstd(){
     M5.begin();
     Wire.begin();
     Serial.begin(115200);
-    //mfrc522.PCD_Init();
+    mfrc522.PCD_Init();
     M5.Display.setCursor(0, 0);
     M5.Display.setTextSize(2);
     M5.Display.setFont(&fonts::efontCN_12);
-    /*WiFi.begin("Mathieu's S25+", "123987456");
+    WiFi.begin("WIFI_SSID", "WIFI_PASSWORD");
     client.setInsecure();
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         M5.Display.println(".");
     }
     M5.Display.print("Connecté !");
-    M5.Display.print(WiFi.localIP());*/
+    M5.Display.print(WiFi.localIP());
     M5.Power.setLed(255);
     M5.delay(1000);
     M5.Display.clear();
@@ -463,3 +463,4 @@ int materiel::uploadlog(String card, String action, String other) {
     http.end();
     return httpcode;
 }
+
