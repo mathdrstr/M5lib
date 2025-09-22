@@ -5,87 +5,16 @@ Unit_UHF_RFID uhf;
 HTTPClient http;
 JsonDocument doc;
 WiFiClientSecure client;
+M5GFX gfx;
+LGFX_Button button;
 
-// Classe d'UI
-String UI::showchoice(std::vector<String> choices) {
-    int current = 0;
-    bool selected = false;
-    M5Canvas menuCanvas(&M5.Display);
-    menuCanvas.createSprite(320, 240);
-    menuCanvas.setTextDatum(TC_DATUM);
-    menuCanvas.setFont(&fonts::efontCN_12);
-    menuCanvas.setTextSize(2);
-    while (!selected) {
-        M5.update();
-        menuCanvas.fillSprite(TFT_BLACK);
-        menuCanvas.fillTriangle(45, 229, 65, 238, 65, 220, TFT_WHITE);
-        menuCanvas.fillTriangle(275, 229, 255, 238, 255, 220, TFT_WHITE);
-        menuCanvas.drawLine(160, 238, 170, 220, TFT_WHITE);
-        menuCanvas.drawLine(160, 238, 155, 230, TFT_WHITE);
-        for (int i = 0; i < choices.size(); i++) {
-            int y = i * 24;
-            if (i == current) {
-                menuCanvas.setTextColor(TFT_BLACK, TFT_WHITE);
-            } 
-            else {
-                menuCanvas.setTextColor(TFT_WHITE, TFT_BLACK);
-            }
-            menuCanvas.drawString(choices[i], 160, y);
-        }
-        menuCanvas.pushSprite(0, 0);
-
-        if (M5.BtnA.wasPressed()){
-            UI::feedback();
-            current = (current - 1 + choices.size()) % choices.size();
-        }
-        if (M5.BtnC.wasPressed()){
-            UI::feedback();
-            current = (current + 1) % choices.size();
-        }
-        if (M5.BtnB.wasPressed()){
-            UI::feedback();
-            selected = true;
-        }
-        M5.delay(10);
-    }
-    menuCanvas.deleteSprite();
-    M5.Display.clear();
-    UI::soustitre(choices[current], 100);
-    UI::soustitre("Validé !", 140);
-    M5.delay(1500);
-    return choices[current];
-}
-
-void UI::titre(String txt, int y){
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.setTextSize(4);
-    M5.Display.drawString(txt, 160, y);
-}
-
-void UI::soustitre(String txt, int y){
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.setTextSize(3);
-    M5.Display.drawString(txt, 160, y);
-}
-
-void UI::corps(String txt, int y){
-    M5.Display.setTextDatum(MC_DATUM);
-    M5.Display.setTextSize(2.5);
-    M5.Display.drawString(txt, 160, y);
-}
-
-void UI::feedback(){
-    M5.Power.setVibration(200);
-    M5.delay(100);
-    M5.Power.setVibration(0);
-}
 
 // Classe M5lib
 void M5lib::setupstd(){
     M5.begin();
     Wire.begin();
     Serial.begin(115200);
-    //mfrc522.PCD_Init();
+    mfrc522.PCD_Init();
     M5.Display.setCursor(0, 0);
     M5.Display.setTextSize(2);
     M5.Display.setFont(&fonts::efontCN_12);
@@ -116,8 +45,8 @@ JsonObject M5lib::reducejson(String json) {
 String M5lib::scancard() {
     String uid = "";
     M5.Display.clear();
-    UI::titre("Présentez", 100);
-    UI::titre("votre carte", 140);
+    screen::titre("Présentez", 100);
+    screen::titre("votre carte", 140);
     while (1) {
         if (mfrc522.PICC_IsNewCardPresent() && mfrc522.PICC_ReadCardSerial()) {
             for (byte i = 0; i < mfrc522.uid.size; i++) {
@@ -128,11 +57,45 @@ String M5lib::scancard() {
                     uid += ":";
             }
             M5.Display.clear();
-            UI::titre("Carte scannée", 120);
+            screen::titre("Carte scannée", 120);
             M5.delay(1000);
             return uid;
         }
     }
+}
+
+void M5lib::getadmin(String *adminkeys){
+    http.begin("https://timetonic.com/live/api.php");
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    int httpcode = http.POST("req=getTableValues"
+                             "&catId= à modifier"
+                             "&fieldIds= à modifier"
+                             "&filterRowIds= à modifier"
+                             "&b_o=username"
+                             "&o_u=username"
+                             "&u_c=username"
+                             "&sesskey=" + sesskey);
+    if (httpcode == 200) {
+        String response = http.getString();
+        http.end();
+        JsonArray fields = reducejson(response)["fields"];
+        // à complêter
+    }
+    else{
+        http.end();
+        M5.Display.clear();
+        screen::titre("error : " + String(httpcode), 120);
+        M5.delay(1500);
+    }
+}
+
+bool M5lib::isadmin(String card){
+    for (int i=0; i <  adminkeys.size(); i++){
+        if (card == adminkeys[i]){
+            return true;
+        }
+    }
+    return false;
 }
 
 void M5lib::scanuhf(String *urfid) {
@@ -179,12 +142,12 @@ void M5lib::getuser(String* user) {
     else{
         http.end();
         M5.Display.clear();
-        UI::titre("error : " + String(httpcode), 120);
+        screen::titre("error : " + String(httpcode), 120);
         M5.delay(1500);
     }
 }
 
-void M5lib::getprojects(std::vector<String>& rojets){
+void M5lib::getprojects(std::vector<String>& projets){ // WIP
     http.begin("https://timetonic.com/live/api.php");
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
     int httpcode = http.POST("req=getTableValues"
@@ -200,29 +163,66 @@ void M5lib::getprojects(std::vector<String>& rojets){
         http.end();
         JsonArray fields = reducejson(response)["fields"];
         for (JsonObject field : fields) {
-            String champ = field["name"];
-            if (champ == "Nom")
-                user[0] = field["values"][0]["value"].as<String>();
-            else if (champ == "Prénom")
-                user[1] = field["values"][0]["value"].as<String>();
+            // Parsage projets
         }
     }
     else{
         http.end();
         M5.Display.clear();
-        UI::titre("error : " + String(httpcode), 120);
+        screen::titre("error : " + String(httpcode), 120);
         M5.delay(1500);
     }
 }
 
 void M5lib::borrow(){
     bool emprunt = false;
+    bool admin = false;
+    String card;
+    screen::titre(name, 110);
+    screen::corps("Emprunter    Incident", 220);
+    while(1){
+        M5.update();
+        if (M5.BtnA.isPressed()){
+            break;
+        }
+        else if (M5.BtnC.isPressed()){
+            incident();
+            M5.Lcd.clear();
+            screen::titre("Machine", 90);
+            screen::titre("Hors-service", 130);
+            screen::corps("Fin de l'incident", 230);
+            while(1){
+                M5.update();
+                if (M5.BtnB.isPressed()){
+                    card = scancard();
+                    if (isadmin(card)){
+                        M5.Lcd.clear();
+                        screen::titre("Fin de", 100);
+                        screen::titre("l'incident", 140);
+                        return;
+                    }
+                    else{
+                        M5.Lcd.clear();
+                        screen::titre("Accès non", 100);
+                        screen::titre("autorisé", 140);
+                        M5.delay(2000);
+                        M5.Lcd.clear();
+                        screen::titre("Machine", 90);
+                        screen::titre("Hors-service", 130);
+                        screen::corps("Fin de l'incident", 230);
+                    }
+                }
+                M5.delay(10);
+            }
+        }
+        M5.delay(10);
+    }
     getuser(user);
     if (user[0] != ""){
         int code = uploadlog(user[2], "Emprunt", "");
         if (code !=200){
             M5.Display.clear();
-            UI::titre("error : " + code, 120);
+            screen::titre("error : " + code, 120);
             M5.delay(1500);
             return;
         }
@@ -231,24 +231,25 @@ void M5lib::borrow(){
     }
     else{
         M5.Display.clear();
-        UI::corps("Utilisateur inconnu", 100);
-        UI::titre("Réessayez", 140);
+        screen::corps("Utilisateur inconnu", 100);
+        screen::titre("Réessayez", 140);
         M5.delay(1500);
         return;
     }
     M5.Display.clear();
-    UI::soustitre("En cours d'usage", 100);
-    UI::soustitre("par " + user[1], 130);
-    UI::soustitre("Fin", 220);
+    screen::soustitre("En cours d'usage", 100);
+    screen::soustitre("par " + user[1], 130);
+    screen::soustitre("Fin", 220);
     while (emprunt = true){
         M5.update();
         if (M5.BtnB.isPressed()){
-            UI::feedback();
-            String card = scancard();
+            button::feedback();
+            card = scancard();
+            admin = isadmin(card);
             if (card == user[2]){
                 M5.Display.clear();
-                UI::titre("Fin de", 100);
-                UI::titre("l'emprunt", 140);
+                screen::titre("Fin de", 100);
+                screen::titre("l'emprunt", 140);
                 uploadlog(user[2], "Retour", "");
                 changestatus(0);
                 M5.delay(1500);
@@ -256,19 +257,31 @@ void M5lib::borrow(){
                 M5.Display.clear();
                 break;
             }
+            else if (admin == true){
+                M5.Display.clear();
+                screen::titre("Emprunt", 100);
+                screen::titre("arrêté", 140);
+                uploadlog(card, "Fin forcée", "");
+                break;
+            }
             else{
                 M5.Display.clear();
-                UI::corps("Mauvais utilisateur", 100);
-                UI::titre("Réessayez", 140);
+                screen::corps("Mauvais utilisateur", 100);
+                screen::titre("Réessayez", 140);
                 M5.delay(1500);
                 M5.Display.clear();
-                UI::soustitre("En cours d'usage", 100);
-                UI::soustitre("par " + user[1], 130);
-                UI::soustitre("Fin", 220);
+                screen::soustitre("En cours d'usage", 100);
+                screen::soustitre("par " + user[1], 130);
+                screen::soustitre("Fin", 220);
+                break;
             }
         }
         M5.delay(20);
     }
+    return;
+}
+
+void M5lib::incident(){
     return;
 }
 
@@ -300,8 +313,10 @@ void accueil::regcard() {
     getuser(user);
     if (user[0] != ""){
         M5.Display.clear();
-        UI::soustitre("Etes-vous bien", 90);
-        UI::soustitre(user[1] + " " + user[0] + " ?", 120);
+        screen::soustitre("Etes-vous bien", 60);
+        screen::soustitre(user[1], 100);
+        screen::soustitre(user[0], 140);
+        screen::soustitre("?", 180);
         M5.Display.setTextSize(2);
         M5.Display.drawString("Non", 55, 220);
         M5.Display.drawString("Oui", 265, 220);
@@ -309,15 +324,15 @@ void accueil::regcard() {
         while (1) {
             M5.update();
             if (M5.BtnA.isPressed()) {
-                UI::feedback();
+                button::feedback();
                 M5.Display.clear();
-                UI::soustitre("Enregistrement de", 100);
-                UI::soustitre("la carte annulé", 140);
+                screen::soustitre("Enregistrement de", 100);
+                screen::soustitre("la carte annulé", 140);
                 M5.delay(1500);
                 break;
             }
             else if (M5.BtnC.isPressed()) {
-                UI::feedback();
+                button::feedback();
                 int httpcode = http.POST("req=createOrUpdateTableRow"
                                      "&rowId=" + user[3] +
                                      "&catId=562424"
@@ -329,14 +344,14 @@ void accueil::regcard() {
                 if (httpcode == 200) {
                     uploadlog(user[2], "Inscription", "");
                     M5.Display.clear();
-                    UI::titre("Carte", 100);
-                    UI::titre("enregistrée", 140);
+                    screen::titre("Carte", 100);
+                    screen::titre("enregistrée", 140);
                 } 
                 else {
                     M5.Display.clear();
-                    UI::soustitre("Erreur lors de", 80);
-                    UI::soustitre("l'upload de la carte", 110);
-                    UI::titre("Réessayez", 150);
+                    screen::soustitre("Erreur lors de", 80);
+                    screen::soustitre("l'upload de la carte", 110);
+                    screen::titre("Réessayez", 150);
                 }
                 M5.delay(1500);
                 break;
@@ -346,8 +361,8 @@ void accueil::regcard() {
     } 
     else {
         M5.Display.clear();
-        UI::titre("Impossible de", 100);
-        UI::titre("trouver l'utilisateur", 130);
+        screen::titre("Impossible de", 100);
+        screen::titre("trouver l'utilisateur", 130);
         M5.delay(1500);
     }
 }
@@ -355,30 +370,31 @@ void accueil::regcard() {
 void accueil::entree(){
     getuser(user);
     M5.Display.clear();
-    UI::titre("Bonjour", 100);
-    UI::titre(user[1], 140);
+    screen::titre("Bonjour", 100);
+    screen::titre(user[1], 140);
     M5.delay(1500);
     M5.Display.clear();
-    UI::soustitre("Pourquoi venez-", 100);
-    UI::soustitre("vous aujourd'hui ?", 130);
+    screen::soustitre("Pourquoi venez-", 100);
+    screen::soustitre("vous aujourd'hui ?", 130);
     M5.delay(2000);
-    String motif = UI::showchoice(motifs);
+    String motif = screen::showchoice(motifs);
     if (motif == "Projet"){
         getprojects(projets);
-        motif = UI::showchoice(projets);
+        motif = screen::showchoice(projets);
     }
     uploadlog(user[2], "Arrivée", motif);
     M5.Display.clear();
-    UI::titre("Bienvenu !", 120);
-    M5.delay(1500);
+    screen::titre("Bienvenu !", 120);
+    M5.delay(3000);
 }
 
 void accueil::sortie(){
     getuser(user);
     M5.Display.clear();
-    UI::titre("Au revoir", 100);
-    UI::titre(user[1], 130);
+    screen::titre("Au revoir", 100);
+    screen::titre(user[1], 140);
     uploadlog(user[2], "Départ", "");
+    M5.delay(2000);
 }
 
 // Classe servante
@@ -430,6 +446,52 @@ int machine::changestatus(int etat){
                                 "&sesskey=" + sesskey);
     http.end();
     return httpcode;
+}
+
+void machine::incident(){
+    user[2] = scancard();
+    http.begin("https://timetonic.com/live/api.php");
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    int httpcode = http.POST("req=createOrUpdateTableRow"
+                                "&rowId=tmp"
+                                "&catId=567091"
+                                "&fieldValues={\"7705235\": \"" + name + "\", \"7705234\": \"" + user[2] + "\"}"
+                                "&b_o=username"
+                                "&o_u=username"
+                                "&u_c=username"
+                                "&sesskey=" + sesskey);
+
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    httpcode = http.POST("req=getTableValues"
+                             "&catId= 567091"
+                             "&fieldIds= [7705256]"
+                             "&filterRowIds= {\"applyViewFilters\": 1215482}"
+                             "&maxRows= 1"
+                             "&b_o=username"
+                             "&o_u=username"
+                             "&u_c=username"
+                             "&sesskey=" + sesskey);
+    if (httpcode == 200){
+        String response = http.getString();
+        http.end();
+        JsonObject field = reducejson(response)["fields"][0];
+        String url = field["values"][0]["value"].as<String>();
+        M5.Lcd.clear();
+        screen::titre("Scannez le", 100);
+        screen::titre("QR code", 140);
+        M5.delay(3000);
+        M5.Lcd.qrcode(url, 40, 0, 240, 6);
+        screen::corps("OK", 225);
+        while (!M5.BtnB.isPressed()){
+            M5.update();
+            M5.delay(10);
+        }
+        M5.Lcd.clear();
+        screen::soustitre("Merci pour votre", 100);
+        screen::soustitre("signalement", 140);
+        M5.delay(3000);
+        M5.Lcd.clear();
+    }
 }
 
 // Classe ordinateur
